@@ -1,7 +1,7 @@
 package com.study.lifeplatform.utils;
 
 /**
- * @author 虎哥
+ * @author mi
  */
 public abstract class RegexPatterns {
     /**

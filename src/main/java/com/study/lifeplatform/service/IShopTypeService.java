@@ -11,8 +11,7 @@ import java.util.List;
  *  服务类
  * </p>
  *
- * @author 虎哥
- * @since 2021-12-22
+ * @author mi
  */
 public interface IShopTypeService extends IService<ShopType> {
 

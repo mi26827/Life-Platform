@@ -23,10 +23,11 @@ public class SeckillVoucherListener {
     @Resource
     VoucherOrderServiceImpl voucherOrderService;
     /**
-     * sheng  消费者1
-     * @param message
-     * @param channel
-     * @throws Exception
+     * 秒杀订单正常队列消费者
+     *
+     * @param message MQ 消息
+     * @param channel MQ 信道
+     * @throws Exception 消费异常
      */
     @RabbitListener(queues = "QA")
     public void receivedA(Message message, Channel channel)throws Exception{
@@ -45,9 +46,10 @@ public class SeckillVoucherListener {
     }
 
     /**
-     * sheng  消费者2
-     * @param message
-     * @throws Exception
+     * 秒杀订单死信队列消费者
+     *
+     * @param message MQ 消息
+     * @throws Exception 消费异常
      */
     @RabbitListener(queues = "QD")
     public void receivedD(Message message)throws Exception{

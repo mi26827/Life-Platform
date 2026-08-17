@@ -2,17 +2,17 @@
     port: 8081
   spring:
     rabbitmq:
-      host: localhost
-      port: 5672
-      username: guest
-      password: guest
+      host: ${RABBITMQ_HOST:localhost}
+      port: ${RABBITMQ_PORT:5672}
+      username: ${RABBITMQ_USERNAME:guest}
+      password: ${RABBITMQ_PASSWORD:guest}
     application:
       name: mi-life-platform
     datasource:
       driver-class-name: com.mysql.jdbc.Driver
       url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DB:dingping}?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
       username: ${MYSQL_USERNAME:root}
-      password: ${MYSQL_PASSWORD:}
+      password: ${MYSQL_PASSWORD:123456}
     redis:
       host: 127.0.0.1
       port: 6379

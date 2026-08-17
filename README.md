@@ -60,20 +60,40 @@ src/main/java/com/study/lifeplatform
 
 ### 1. 环境准备
 
-- JDK 8+（Java 17 亦可运行）
-- MySQL 8.x、Redis、RabbitMQ、Maven 3.6+
+- JDK 8+（Java 17 亦可运行）、Maven 3.6+
+- Docker 与 Docker Compose（推荐）；或本机手动安装 MySQL 8.x、Redis、RabbitMQ
 - Windows 环境可参考 [RUNNING_BACKEND.md](RUNNING_BACKEND.md) 的完整步骤
 
-### 2. 初始化数据库
+### 2. 一键启动中间件（Docker Compose）
+
+仓库根目录已提供 `docker-compose.yml`，包含 MySQL 8、Redis 7、RabbitMQ 3（含管理台 http://localhost:15672，账号 guest/guest）：
 
 ```bash
-mysql -uroot -e "CREATE DATABASE dingping DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -uroot --default-character-set=utf8mb4 dingping < src/main/resources/db/life-platform.sql
+docker compose up -d
+
+# 首次启动需导入初始化数据（macOS/Linux）
+./scripts/init-data.sh
+
+# Windows PowerShell 手动导入
+docker exec -i milife-mysql mysql -uroot -p123456 --default-character-set=utf8mb4 dingping < src/main/resources/db/life-platform.sql
 ```
 
-### 3. 修改配置
+若使用本机自建的中间件，可跳过此步，自行执行 `src/main/resources/db/life-platform.sql`。
 
-编辑 `src/main/resources/application.yaml`，填入本地 MySQL、Redis、RabbitMQ 连接信息。生产环境建议通过环境变量注入密码，不要提交明文凭证。
+### 3. 配置说明
+
+`application.yaml` 所有连接信息均为本地默认值（MySQL `root/123456`、Redis 本机、RabbitMQ `guest/guest`），与 Docker Compose 服务一致，**克隆后无需修改即可启动**。
+
+如需连接其他环境，通过环境变量覆盖：
+
+| 环境变量 | 默认值 |
+| --- | --- |
+| `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_DB` | `127.0.0.1` / `3306` / `dingping` |
+| `MYSQL_USERNAME` / `MYSQL_PASSWORD` | `root` / `123456` |
+| `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672` |
+| `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` | `guest` / `guest` |
+
+生产环境务必通过环境变量注入密码，不要提交真实凭证。
 
 ### 4. 启动后端
 

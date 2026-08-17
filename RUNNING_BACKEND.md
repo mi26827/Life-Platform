@@ -10,7 +10,7 @@ reproduced successfully on Windows with Java 17.
 - MySQL 8.0.34
 - Docker Desktop 29.5.2
 - Redis on `127.0.0.1:6379`
-- RabbitMQ on `127.0.0.1:5672`
+- Kafka on `127.0.0.1:9092`
 - Backend on `http://127.0.0.1:8081`
 
 Java 17 compiled and ran the Java 8-targeted project successfully. No JDK
@@ -77,31 +77,35 @@ Remove-Item Env:MYSQL_PWD
 
 Expected results are 11 tables and 14 shops.
 
-## 4. Start Redis and RabbitMQ
+## 4. Start Redis and Kafka
 
 Open Docker Desktop first. If the containers already exist, start them:
 
 ```powershell
-docker start redis rabbitmq
+docker start redis kafka
 ```
 
 For a clean machine without existing containers:
 
 ```powershell
 docker run -d --name dianping-redis -p 6379:6379 redis:6.2
-docker run -d --name dianping-rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
+docker run -d --name dianping-kafka -p 9092:9092 `
+  -e KAFKA_CFG_NODE_ID=0 `
+  -e KAFKA_CFG_PROCESS_ROLES=controller,broker `
+  -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 `
+  -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 `
+  -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT `
+  -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@dianping-kafka:9093 `
+  -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER `
+  bitnami/kafka:3.7
 ```
 
 Check service health:
 
 ```powershell
 docker ps
-docker exec rabbitmq rabbitmq-diagnostics -q ping
+docker exec kafka kafka-topics.sh --bootstrap-server localhost:9092 --list
 ```
-
-This machine already had authenticated `redis` and `rabbitmq` containers, so
-their credentials were passed to Spring through environment variables instead
-of being written to `application.yaml`.
 
 Redis database 15 is used to isolate this backend from unrelated cached data:
 
@@ -118,8 +122,7 @@ Maven:
 $env:SPRING_DATASOURCE_PASSWORD = '<your-mysql-root-password>'
 $env:SPRING_REDIS_PASSWORD = '<your-redis-password>'
 $env:SPRING_REDIS_DATABASE = '15'
-$env:SPRING_RABBITMQ_USERNAME = '<your-rabbitmq-user>'
-$env:SPRING_RABBITMQ_PASSWORD = '<your-rabbitmq-password>'
+$env:SPRING_KAFKA_BOOTSTRAP_SERVERS = '<your-kafka-bootstrap-servers>'
 ```
 
 Spring Boot 2.3 supports these relaxed-binding environment variable overrides.
@@ -153,7 +156,7 @@ shop 1 into Redis:
 mvn '-Dtest=MiLifePlatformApplicationTests#testSaveShop' test
 ```
 
-Run this command with the same database, Redis, and RabbitMQ environment
+Run this command with the same database, Redis, and Kafka environment
 variables used for the backend.
 
 ## 8. Verify
@@ -182,7 +185,7 @@ Stop-Process -Id $listener.OwningProcess
 Optionally stop Docker services:
 
 ```powershell
-docker stop redis rabbitmq
+docker stop redis kafka
 ```
 
 If MySQL was launched manually, stop its process only when no other local

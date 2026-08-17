@@ -6,10 +6,10 @@
 
 | 类别 | 选型 |
 | --- | --- |
-| 后端框架 | Spring Boot 2.3.12、Spring MVC、Spring AMQP |
+| 后端框架 | Spring Boot 2.3.12、Spring MVC、Spring Kafka |
 | 数据存储 | MySQL 8.x、MyBatis-Plus 3.4.3 |
 | 缓存 | Redis（Lettuce + Redisson 3.13.6） |
-| 消息队列 | RabbitMQ（异步秒杀下单） |
+| 消息队列 | Kafka（异步秒杀下单） |
 | 工具库 | Hutool、Lombok |
 | 前端部署 | Nginx（静态页面 + 反向代理） |
 
@@ -27,7 +27,7 @@
 ### 优惠券秒杀
 - Redis + Lua 脚本原子完成库存判断、一人一单预检与扣减
 - 全局唯一订单 ID 生成（Redis 自增 + 时间戳）
-- RabbitMQ 异步下单，正常队列 + 死信队列兜底
+- Kafka 异步下单，主题 `seckill.order`，消费失败由重试机制兜底
 - 乐观锁（stock > 0 条件更新）防止超卖
 
 ### 社交互动
@@ -45,12 +45,12 @@
 
 ```text
 src/main/java/com/study/lifeplatform
-├── config          # Redis、Redisson、RabbitMQ、MVC 等配置
+├── config          # Redis、Redisson、Kafka、MVC 等配置
 ├── controller      # REST 接口层
 ├── dto             # 数据传输对象与统一返回 Result
 ├── entity          # 数据库实体
 ├── interceptor     # 登录拦截器（Token 刷新 + 登录校验）
-├── listener        # MQ 消费者（异步秒杀下单）
+├── listener        # Kafka 消费者（异步秒杀下单）
 ├── mapper          # MyBatis-Plus Mapper
 ├── service         # 业务接口与实现
 └── utils           # 缓存客户端、分布式锁、ID 生成器、登录上下文等
@@ -61,12 +61,12 @@ src/main/java/com/study/lifeplatform
 ### 1. 环境准备
 
 - JDK 8+（Java 17 亦可运行）、Maven 3.6+
-- Docker 与 Docker Compose（推荐）；或本机手动安装 MySQL 8.x、Redis、RabbitMQ
+- Docker 与 Docker Compose（推荐）；或本机手动安装 MySQL 8.x、Redis、Kafka
 - Windows 环境可参考 [RUNNING_BACKEND.md](RUNNING_BACKEND.md) 的完整步骤
 
 ### 2. 一键启动中间件（Docker Compose）
 
-仓库根目录已提供 `docker-compose.yml`，包含 MySQL 8、Redis 7、RabbitMQ 3（含管理台 http://localhost:15672，账号 guest/guest）：
+仓库根目录已提供 `docker-compose.yml`，包含 MySQL 8、Redis 7、Kafka 3.7（KRaft 单节点，`localhost:9092`，无需 ZooKeeper）：
 
 ```bash
 docker compose up -d
@@ -82,7 +82,7 @@ docker exec -i milife-mysql mysql -uroot -p123456 --default-character-set=utf8mb
 
 ### 3. 配置说明
 
-`application.yaml` 所有连接信息均为本地默认值（MySQL `root/123456`、Redis 本机、RabbitMQ `guest/guest`），与 Docker Compose 服务一致，**克隆后无需修改即可启动**。
+`application.yaml` 所有连接信息均为本地默认值（MySQL `root/123456`、Redis 本机、Kafka `localhost:9092`），与 Docker Compose 服务一致，**克隆后无需修改即可启动**。
 
 如需连接其他环境，通过环境变量覆盖：
 
@@ -90,8 +90,7 @@ docker exec -i milife-mysql mysql -uroot -p123456 --default-character-set=utf8mb
 | --- | --- |
 | `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_DB` | `127.0.0.1` / `3306` / `dingping` |
 | `MYSQL_USERNAME` / `MYSQL_PASSWORD` | `root` / `123456` |
-| `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672` |
-| `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` | `guest` / `guest` |
+| `KAFKA_HOST` / `KAFKA_PORT` | `localhost` / `9092` |
 
 生产环境务必通过环境变量注入密码，不要提交真实凭证。
 

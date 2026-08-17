@@ -7,13 +7,14 @@ import com.study.lifeplatform.entity.VoucherOrder;
 import com.study.lifeplatform.mapper.VoucherOrderMapper;
 import com.study.lifeplatform.service.ISeckillVoucherService;
 import com.study.lifeplatform.service.IVoucherOrderService;
+import com.study.lifeplatform.config.KafkaTopicConfig;
 import com.study.lifeplatform.utils.RedisIdWorker;
 import com.study.lifeplatform.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,7 +23,7 @@ import java.util.Collections;
 
 /**
  * 优惠券订单服务实现类，秒杀资格由 Lua 脚本判定，
- * 订单落库由 RabbitMQ 异步消费完成。
+ * 订单落库由 Kafka 异步消费完成。
  *
  * @author mi
  */
@@ -34,7 +35,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private ISeckillVoucherService seckillVoucherService;
 
     @Resource
-    private RabbitTemplate rabbitTemplate;
+    private KafkaTemplate<String, String> kafkaTemplate;
 
     @Resource
     private RedisIdWorker redisIdWorker;
@@ -55,7 +56,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     /**
      * 秒杀下单入口：Lua 脚本原子校验库存与一人一单，
-     * 校验通过后将订单消息发送到 RabbitMQ 异步落库。
+     * 校验通过后将订单消息发送到 Kafka 异步落库。
      *
      * @param voucherId 优惠券 id
      * @return 含订单 id 的结果
@@ -82,9 +83,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         order.setVoucherId(voucherId);
         String jsonStr = JSONUtil.toJsonStr(order);
         try {
-            rabbitTemplate.convertAndSend("X", "XA", jsonStr);
+            kafkaTemplate.send(KafkaTopicConfig.SECKILL_ORDER_TOPIC, String.valueOf(orderId), jsonStr);
         } catch (Exception e) {
-            log.error("发送 RabbitMQ 消息失败，订单ID: {}", orderId, e);
+            log.error("发送 Kafka 消息失败，订单ID: {}", orderId, e);
             throw new RuntimeException("发送消息失败");
         }
         return Result.ok(orderId);

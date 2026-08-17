@@ -1,18 +1,22 @@
 package com.study.lifeplatform.listener;
 
 import cn.hutool.json.JSONUtil;
+import com.study.lifeplatform.config.KafkaTopicConfig;
 import com.study.lifeplatform.entity.VoucherOrder;
 import com.study.lifeplatform.service.impl.SeckillVoucherServiceImpl;
 import com.study.lifeplatform.service.impl.VoucherOrderServiceImpl;
-import com.rabbitmq.client.Channel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.core.Message;
-import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 
+/**
+ * 秒杀订单 Kafka 消费者，消费秒杀下单消息并异步落库。
+ *
+ * @author mi
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -22,48 +26,21 @@ public class SeckillVoucherListener {
     SeckillVoucherServiceImpl seckillVoucherService;
     @Resource
     VoucherOrderServiceImpl voucherOrderService;
-    /**
-     * 秒杀订单正常队列消费者
-     *
-     * @param message MQ 消息
-     * @param channel MQ 信道
-     * @throws Exception 消费异常
-     */
-    @RabbitListener(queues = "QA")
-    public void receivedA(Message message, Channel channel)throws Exception{
-        String msg=new String(message.getBody());
-        log.info("正常队列:");
-        VoucherOrder voucherOrder = JSONUtil.toBean(msg, VoucherOrder.class);
-        log.info(voucherOrder.toString());
-        voucherOrderService.save(voucherOrder);//保存到数据库
-        //数据库秒杀库存减一
-        Long voucherId=voucherOrder.getVoucherId();
-        seckillVoucherService.update()
-                .setSql("stock = stock - 1") // set stock = stock - 1
-                .eq("voucher_id", voucherId).gt("stock", 0) // where id = ? and stock > 0
-                .update();
-
-    }
 
     /**
-     * 秒杀订单死信队列消费者
+     * 消费秒杀订单消息：保存订单到数据库并扣减秒杀库存。
      *
-     * @param message MQ 消息
-     * @throws Exception 消费异常
+     * @param message Kafka 消息体，内容为订单 JSON
      */
-    @RabbitListener(queues = "QD")
-    public void receivedD(Message message)throws Exception{
-        log.info("死信队列:");
-        String msg=new String(message.getBody());
-        VoucherOrder voucherOrder = JSONUtil.toBean(msg, VoucherOrder.class);
-        log.info(voucherOrder.toString());
+    @KafkaListener(topics = KafkaTopicConfig.SECKILL_ORDER_TOPIC, groupId = "mi-life-platform")
+    public void onMessage(String message) {
+        log.info("秒杀订单消费者 收到消息: {}", message);
+        VoucherOrder voucherOrder = JSONUtil.toBean(message, VoucherOrder.class);
         voucherOrderService.save(voucherOrder);
-
-        Long voucherId=voucherOrder.getVoucherId();
+        Long voucherId = voucherOrder.getVoucherId();
         seckillVoucherService.update()
-                .setSql("stock = stock - 1") // set stock = stock - 1
-                .eq("voucher_id", voucherId).gt("stock", 0) // where id = ? and stock > 0
+                .setSql("stock = stock - 1")
+                .eq("voucher_id", voucherId).gt("stock", 0)
                 .update();
-
     }
 }

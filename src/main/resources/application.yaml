@@ -1,0 +1,32 @@
+  server:
+    port: 8081
+  spring:
+    rabbitmq:
+      host: localhost
+      port: 5672
+      username: guest
+      password: guest
+    application:
+      name: mi-life-platform
+    datasource:
+      driver-class-name: com.mysql.jdbc.Driver
+      url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DB:dingping}?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      username: ${MYSQL_USERNAME:root}
+      password: ${MYSQL_PASSWORD:}
+    redis:
+      host: 127.0.0.1
+      port: 6379
+
+      lettuce:
+        pool:
+          max-active: 30
+          max-idle: 15
+          min-idle: 5
+          time-between-eviction-runs: 10s
+    jackson:
+      default-property-inclusion: non_null # JSON处理时忽略非空字段
+  mybatis-plus:
+    type-aliases-package: com.study.lifeplatform.entity # 别名扫描包
+  logging:
+    level:
+      com.study.lifeplatform: debug

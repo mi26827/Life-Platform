@@ -7,6 +7,7 @@ import com.study.lifeplatform.dto.Result;
 import com.study.lifeplatform.entity.Shop;
 import com.study.lifeplatform.service.IShopService;
 import com.study.lifeplatform.utils.SystemConstants;
+import com.study.lifeplatform.utils.UserHolder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -94,5 +95,30 @@ public class ShopController {
                 .page(new Page<>(current, SystemConstants.MAX_PAGE_SIZE));
         // 返回数据
         return Result.ok(page.getRecords());
+    }
+
+    /**
+     * 点赞或取消点赞商铺，需登录，同一用户对同一商铺重复调用为取消点赞
+     *
+     * @param id 商铺id
+     * @return 无
+     */
+    @PostMapping("/like/{id}")
+    public Result likeShop(@PathVariable("id") Long id) {
+        if (UserHolder.getUser() == null) {
+            return Result.fail("请先登录");
+        }
+        return shopService.likeShop(id);
+    }
+
+    /**
+     * 查询商铺热度点赞排行 Top N
+     *
+     * @param n 排行数量，默认 10，最大 50
+     * @return 按点赞数降序的商铺列表
+     */
+    @GetMapping("/top")
+    public Result queryTopShops(@RequestParam(value = "n", defaultValue = "10") Integer n) {
+        return shopService.queryTopShops(n);
     }
 }

@@ -22,4 +22,29 @@ public class RedisConstants {
 
     public static final String SHOP_TYPE_KEY = "shop_type:";
     public static final Long SHOP_TYPE_LONG=10L;
+
+    /**
+     * 店铺优惠券列表缓存 key 前缀，完整 key 为 cache:voucher:shop:{shopId}
+     */
+    public static final String CACHE_VOUCHER_KEY = "cache:voucher:shop:";
+
+    /**
+     * 店铺优惠券列表缓存基础过期时间（分钟），实际过期时在此基础上叠加随机值防雪崩
+     */
+    public static final Long CACHE_VOUCHER_TTL = 30L;
+
+    /**
+     * 店铺无券时空值缓存的过期时间（分钟），防止缓存穿透
+     */
+    public static final Long CACHE_VOUCHER_NULL_TTL = 2L;
+
+    /**
+     * 商铺点赞用户集合 key 前缀，完整 key 为 shop:liked:{shopId}，成员为用户 id，实现一人一赞
+     */
+    public static final String SHOP_LIKED_KEY = "shop:liked:";
+
+    /**
+     * 商铺热度排行 ZSet key，member 为商铺 id，score 为点赞数
+     */
+    public static final String SHOP_RANK_KEY = "shop:rank";
 }

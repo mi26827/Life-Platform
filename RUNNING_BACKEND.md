@@ -107,6 +107,12 @@ docker ps
 docker exec kafka kafka-topics.sh --bootstrap-server localhost:9092 --list
 ```
 
+If consumer group coordination is stuck (apache/kafka image may hang when auto-creating `__consumer_offsets`), create it manually — on macOS/Linux just run the idempotent script `./scripts/init-kafka.sh`; on Windows use:
+
+```powershell
+docker exec kafka kafka-topics.sh --bootstrap-server localhost:9092 --create --topic __consumer_offsets --partitions 50 --replication-factor 1 --config cleanup.policy=compact
+```
+
 Redis database 15 is used to isolate this backend from unrelated cached data:
 
 ```powershell

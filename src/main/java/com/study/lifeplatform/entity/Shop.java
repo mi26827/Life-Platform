@@ -105,4 +105,16 @@ public class Shop implements Serializable {
 
     @TableField(exist = false)
     private Double distance;
+
+    /**
+     * 当前用户是否已点赞该商铺
+     */
+    @TableField(exist = false)
+    private Boolean isLiked;
+
+    /**
+     * 商铺点赞数（热度值）
+     */
+    @TableField(exist = false)
+    private Long likes;
 }

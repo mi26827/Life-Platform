@@ -1,6 +1,6 @@
 # MI Life Platform（本地生活服务点评平台）
 
-一个基于 Spring Boot + Redis + MySQL 的本地生活服务点评平台，涵盖商铺查询、优惠券秒杀、社交互动（探店笔记、点赞、关注）、附近商铺、签到统计等核心业务场景。项目重点实践了 Redis 在高并发场景下的典型应用：缓存策略、分布式锁、消息队列异步下单、GEO 位置服务与 BitMap 统计。
+一个基于 Spring Boot + Redis + MySQL 的本地生活服务点评平台，涵盖商铺查询、商铺点赞排行、优惠券秒杀、社交互动（探店笔记、点赞、关注）、附近商铺、签到统计等核心业务场景。项目重点实践了 Redis 在高并发场景下的典型应用：缓存策略、分布式锁、消息队列异步下单、GEO 位置服务与 BitMap 统计。
 
 ## 技术栈
 
@@ -24,11 +24,22 @@
 - 缓存穿透：空值缓存；缓存雪崩：随机过期时间；缓存击穿：互斥锁与逻辑过期两种方案
 - 缓存预热工具与封装的通用缓存客户端（`CacheClient`）
 
+### 商铺点赞与热度排行
+- `POST /shop/like/{id}`：Set 记录点赞用户实现一人一赞，重复调用为取消点赞
+- 热度分由 ZSet `shop:rank` 维护（incrementScore ±1）
+- `GET /shop/top?n=10`：按点赞数降序的商铺热度榜，默认 Top 10、上限 50，过滤已取消点赞的商铺
+- 商铺详情附带 `likes`（点赞数）与 `isLiked`（当前用户是否已赞）字段，游客视角 `isLiked` 为 false
+
 ### 优惠券秒杀
 - Redis + Lua 脚本原子完成库存判断、一人一单预检与扣减
 - 全局唯一订单 ID 生成（Redis 自增 + 时间戳）
-- Kafka 异步下单，主题 `seckill.order`，消费失败由重试机制兜底
+- Kafka 异步下单，主题 `seckill.order`；消费侧按订单 ID 判重实现幂等，失败自动重试 3 次，仍失败投递死信主题 `seckill.order.dlt` 兜底
 - 乐观锁（stock > 0 条件更新）防止超卖
+
+### 优惠券管理
+- `GET /voucher/list/{shopId}`：店铺优惠券列表查询，Cache Aside 缓存（`cache:voucher:shop:{shopId}`），TTL 30 分钟叠加随机值防雪崩，无券时空值缓存 2 分钟防穿透
+- 新增优惠券（普通券 / 秒杀券）后自动删除对应店铺的列表缓存，保证下次查询拿到最新数据
+- 普通券与秒杀券新增链路分离：普通券仅写入 `tb_voucher`，秒杀券额外写 `tb_seckill_voucher` 并预热库存到 Redis
 
 ### 社交互动
 - 探店笔记发布与图片上传
@@ -50,11 +61,24 @@ src/main/java/com/study/lifeplatform
 ├── dto             # 数据传输对象与统一返回 Result
 ├── entity          # 数据库实体
 ├── interceptor     # 登录拦截器（Token 刷新 + 登录校验）
-├── listener        # Kafka 消费者（异步秒杀下单）
+├── listener        # Kafka 消费者（异步秒杀下单，幂等消费）
 ├── mapper          # MyBatis-Plus Mapper
 ├── service         # 业务接口与实现
 └── utils           # 缓存客户端、分布式锁、ID 生成器、登录上下文等
 ```
+
+## 核心接口一览
+
+| 模块 | 接口 | 说明 |
+| --- | --- | --- |
+| 商铺 | `GET /shop/{id}` | 商铺详情（缓存 + 点赞状态） |
+| 商铺 | `GET /shop/of/type?typeId=&current=` | 按类型分页，携带 x/y 时按距离排序 |
+| 商铺 | `POST /shop/like/{id}` | 点赞 / 取消点赞（需登录） |
+| 商铺 | `GET /shop/top?n=10` | 商铺热度点赞排行 Top N |
+| 优惠券 | `GET /voucher/list/{shopId}` | 店铺优惠券列表（缓存） |
+| 优惠券 | `POST /voucher` / `POST /voucher/seckill` | 新增普通券 / 秒杀券 |
+| 秒杀 | `POST /voucher-order/seckill/{id}` | 秒杀下单（Lua 判定 + Kafka 异步落库） |
+| 用户 | `POST /user/code` / `POST /user/login` | 发送验证码 / 登录 |
 
 ## 快速开始
 
@@ -73,6 +97,9 @@ docker compose up -d
 
 # 首次启动需导入初始化数据（macOS/Linux）
 ./scripts/init-data.sh
+
+# Kafka 初始化：预创建业务主题与 __consumer_offsets，避免消费组入组卡住
+./scripts/init-kafka.sh
 
 # Windows PowerShell 手动导入
 docker exec -i milife-mysql mysql -uroot -p123456 --default-character-set=utf8mb4 dingping < src/main/resources/db/life-platform.sql

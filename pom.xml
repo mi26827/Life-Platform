@@ -95,6 +95,25 @@
             <version>6.1.6.RELEASE</version>
         </dependency>
 
+        <!--Caffeine 本地缓存，与 Redis 构成多级缓存-->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>2.9.3</version>
+        </dependency>
+
+        <!--LangChain4j 大模型能力接入，实现智能客服-->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+            <version>0.31.0</version>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
+            <version>0.31.0</version>
+        </dependency>
+
     </dependencies>
 
     <build>

@@ -1,25 +1,21 @@
 package com.study.lifeplatform.service.impl;
 
-import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.study.lifeplatform.dto.Result;
-import com.study.lifeplatform.dto.UserDTO;
 import com.study.lifeplatform.entity.Shop;
 import com.study.lifeplatform.mapper.ShopMapper;
 import com.study.lifeplatform.service.IShopService;
 import com.study.lifeplatform.utils.CacheClient;
 import com.study.lifeplatform.utils.RedisData;
 import com.study.lifeplatform.utils.SystemConstants;
-import com.study.lifeplatform.utils.UserHolder;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.GeoResult;
 import org.springframework.data.geo.GeoResults;
 import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.domain.geo.GeoReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,14 +27,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 import static com.study.lifeplatform.utils.RedisConstants.CACHE_SHOP_KEY;
 import static com.study.lifeplatform.utils.RedisConstants.SHOP_GEO_KEY;
-import static com.study.lifeplatform.utils.RedisConstants.SHOP_LIKED_KEY;
-import static com.study.lifeplatform.utils.RedisConstants.SHOP_RANK_KEY;
 import static com.study.lifeplatform.utils.RedisConstants.CACHE_SHOP_TTL;
 
 /**
@@ -49,11 +41,6 @@ import static com.study.lifeplatform.utils.RedisConstants.CACHE_SHOP_TTL;
 @Service
 public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IShopService {
 
-    /**
-     * 热度排行最大返回数量
-     */
-    private static final int MAX_TOP_N = 50;
-
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
@@ -61,14 +48,14 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     private CacheClient clientClient;
 
     /**
-     * 根据 id 查询店铺，基于缓存穿透策略优先读缓存。
+     * 根据 id 查询店铺，基于 Caffeine + Redis 多级缓存策略优先读缓存。
      *
      * @param id 店铺 id
      * @return 店铺数据
      */
     @Override
     public Result queryById(Long id) {
-        Shop shop = clientClient.queryWithPassThrough(
+        Shop shop = clientClient.queryWithMultiLevel(
                 CACHE_SHOP_KEY,
                 id,
                 Shop.class,
@@ -79,100 +66,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         if (shop == null) {
             return Result.fail("店铺不存在！");
         }
-        fillLikeInfo(shop);
         return Result.ok(shop);
-    }
-
-    /**
-     * 填充商铺的点赞数与当前用户点赞状态。
-     *
-     * @param shop 商铺数据
-     */
-    private void fillLikeInfo(Shop shop) {
-        Double score = stringRedisTemplate.opsForZSet().score(SHOP_RANK_KEY, shop.getId().toString());
-        shop.setLikes(score == null ? 0L : score.longValue());
-        UserDTO user = UserHolder.getUser();
-        if (user == null) {
-            shop.setIsLiked(false);
-            return;
-        }
-        Boolean isMember = stringRedisTemplate.opsForSet()
-                .isMember(SHOP_LIKED_KEY + shop.getId(), user.getId().toString());
-        shop.setIsLiked(BooleanUtil.isTrue(isMember));
-    }
-
-    /**
-     * 点赞或取消点赞商铺：Set 记录用户保证一人一赞，ZSet 维护热度分。
-     * 已点赞时再次调用为取消点赞，热度分相应扣减。
-     *
-     * @param id 商铺 id
-     * @return 操作结果
-     */
-    @Override
-    public Result likeShop(Long id) {
-        Shop shop = getById(id);
-        if (shop == null) {
-            return Result.fail("店铺不存在！");
-        }
-        Long userId = UserHolder.getUser().getId();
-        String likedKey = SHOP_LIKED_KEY + id;
-        Boolean isMember = stringRedisTemplate.opsForSet().isMember(likedKey, userId.toString());
-        if (BooleanUtil.isTrue(isMember)) {
-            stringRedisTemplate.opsForSet().remove(likedKey, userId.toString());
-            stringRedisTemplate.opsForZSet().incrementScore(SHOP_RANK_KEY, id.toString(), -1);
-        } else {
-            stringRedisTemplate.opsForSet().add(likedKey, userId.toString());
-            stringRedisTemplate.opsForZSet().incrementScore(SHOP_RANK_KEY, id.toString(), 1);
-        }
-        return Result.ok();
-    }
-
-    /**
-     * 查询商铺热度点赞排行 Top N：ZSet 按分数倒序取前 N，查库组装并附带点赞数与当前用户点赞状态。
-     *
-     * @param topN 排行数量，超过上限时按上限处理
-     * @return 按点赞数降序的商铺列表
-     */
-    @Override
-    public Result queryTopShops(Integer topN) {
-        int size = topN == null || topN < 1 ? 10 : Math.min(topN, MAX_TOP_N);
-        Set<ZSetOperations.TypedTuple<String>> tuples = stringRedisTemplate.opsForZSet()
-                .reverseRangeWithScores(SHOP_RANK_KEY, 0, size - 1L);
-        if (tuples == null || tuples.isEmpty()) {
-            return Result.ok(Collections.emptyList());
-        }
-        List<Long> ids = tuples.stream()
-                .filter(tuple -> tuple.getScore() != null && tuple.getScore() > 0)
-                .map(tuple -> Long.valueOf(tuple.getValue()))
-                .collect(Collectors.toList());
-        if (ids.isEmpty()) {
-            return Result.ok(Collections.emptyList());
-        }
-        Map<Long, Long> likesMap = new HashMap<>(ids.size());
-        for (ZSetOperations.TypedTuple<String> tuple : tuples) {
-            likesMap.put(Long.valueOf(tuple.getValue()), tuple.getScore().longValue());
-        }
-        List<Shop> shops = listByIds(ids);
-        Map<Long, Shop> shopMap = shops.stream()
-                .collect(Collectors.toMap(Shop::getId, s -> s));
-        List<Shop> result = new ArrayList<>(ids.size());
-        for (Long id : ids) {
-            Shop shop = shopMap.get(id);
-            if (shop == null) {
-                continue;
-            }
-            shop.setLikes(likesMap.get(id));
-            UserDTO user = UserHolder.getUser();
-            if (user == null) {
-                shop.setIsLiked(false);
-            } else {
-                Boolean isMember = stringRedisTemplate.opsForSet()
-                        .isMember(SHOP_LIKED_KEY + id, user.getId().toString());
-                shop.setIsLiked(BooleanUtil.isTrue(isMember));
-            }
-            result.add(shop);
-        }
-        return Result.ok(result);
     }
 
     /**
@@ -204,6 +98,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         }
         updateById(shop);
         stringRedisTemplate.delete(CACHE_SHOP_KEY + shop.getId());
+        clientClient.evictLocal(CACHE_SHOP_KEY, shop.getId());
         return Result.ok();
     }
 

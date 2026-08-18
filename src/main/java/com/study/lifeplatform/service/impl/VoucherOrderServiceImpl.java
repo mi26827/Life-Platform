@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
+import java.time.LocalDateTime;
 import java.util.Collections;
 
 /**
@@ -30,6 +31,21 @@ import java.util.Collections;
 @Slf4j
 @Service
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
+
+    /**
+     * 订单状态：未支付
+     */
+    private static final int ORDER_STATUS_UNPAID = 1;
+
+    /**
+     * 订单状态：已支付
+     */
+    private static final int ORDER_STATUS_PAID = 2;
+
+    /**
+     * 订单状态：已取消（关闭）
+     */
+    private static final int ORDER_STATUS_CLOSED = 4;
 
     @Resource
     private ISeckillVoucherService seckillVoucherService;
@@ -81,6 +97,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         order.setId(orderId);
         order.setUserId(userId);
         order.setVoucherId(voucherId);
+        order.setStatus(ORDER_STATUS_UNPAID);
         String jsonStr = JSONUtil.toJsonStr(order);
         try {
             kafkaTemplate.send(KafkaTopicConfig.SECKILL_ORDER_TOPIC, String.valueOf(orderId), jsonStr);
@@ -115,5 +132,50 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return;
         }
         save(voucherOrder);
+    }
+
+    /**
+     * 支付订单：以 status=1（未支付）为条件的乐观锁 CAS 更新，
+     * 与定时关单并发时仅一方成功，避免已关闭订单被支付。
+     *
+     * @param orderId 订单 id
+     * @return 支付结果
+     */
+    @Override
+    public Result payOrder(Long orderId) {
+        boolean success = update()
+                .eq("id", orderId)
+                .eq("status", ORDER_STATUS_UNPAID)
+                .set("status", ORDER_STATUS_PAID)
+                .set("pay_time", LocalDateTime.now())
+                .set("update_time", LocalDateTime.now())
+                .update();
+        if (!success) {
+            log.warn("订单支付失败，订单状态已变更 订单ID={}", orderId);
+            return Result.fail("订单状态已变更，支付失败");
+        }
+        return Result.ok();
+    }
+
+    /**
+     * 关闭订单：以 status=1（未支付）为条件的乐观锁 CAS 更新，
+     * 与支付并发冲突时更新失败并返回错误。
+     *
+     * @param orderId 订单 id
+     * @return 关单结果
+     */
+    @Override
+    public Result closeOrder(Long orderId) {
+        boolean success = update()
+                .eq("id", orderId)
+                .eq("status", ORDER_STATUS_UNPAID)
+                .set("status", ORDER_STATUS_CLOSED)
+                .set("update_time", LocalDateTime.now())
+                .update();
+        if (!success) {
+            log.warn("订单关闭失败，订单状态已变更 订单ID={}", orderId);
+            return Result.fail("订单状态已变更，关闭失败");
+        }
+        return Result.ok();
     }
 }

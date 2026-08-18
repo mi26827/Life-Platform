@@ -4,6 +4,8 @@ import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.study.lifeplatform.entity.Shop;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -20,9 +22,56 @@ import java.util.function.Function;
 public class CacheClient {
     private final StringRedisTemplate stringRedisTemplate;
 
+    /**
+     * Caffeine 本地一级缓存，作为多级缓存的最前端，命中后直接返回避免访问 Redis。
+     */
+    private final Cache<String, Object> localCache = Caffeine.newBuilder()
+            .initialCapacity(64)
+            .maximumSize(10_000)
+            .expireAfterWrite(5, TimeUnit.MINUTES)
+            .build();
 
     public CacheClient(StringRedisTemplate stringRedisTemplate) {
         this.stringRedisTemplate = stringRedisTemplate;
+    }
+
+    /**
+     * 多级缓存查询：Caffeine 本地缓存 -> Redis（含空值防穿透） -> 数据库。
+     * 数据库结果会同时回写 Redis 与本地缓存，本地缓存过期时间应短于 Redis。
+     *
+     * @param keyPrefix 缓存 key 前缀
+     * @param id 业务 id
+     * @param type 返回值类型
+     * @param dbFallback 数据库查询函数
+     * @param redisTime Redis 缓存时长
+     * @param unit 时间单位
+     * @param <R> 返回值类型
+     * @param <ID> id 类型
+     * @return 查询结果，数据库不存在时返回 null
+     */
+    public <R, ID> R queryWithMultiLevel(
+            String keyPrefix, ID id, Class<R> type, Function<ID, R> dbFallback,
+            Long redisTime, TimeUnit unit) {
+        String key = keyPrefix + id;
+        Object local = localCache.getIfPresent(key);
+        if (local != null) {
+            return type.cast(local);
+        }
+        R r = queryWithPassThrough(keyPrefix, id, type, dbFallback, redisTime, unit);
+        if (r != null) {
+            localCache.put(key, r);
+        }
+        return r;
+    }
+
+    /**
+     * 失效本地一级缓存，在数据库更新删除 Redis 缓存时同步调用，保障多级缓存一致性。
+     *
+     * @param keyPrefix 缓存 key 前缀
+     * @param id 业务 id
+     */
+    public void evictLocal(String keyPrefix, Object id) {
+        localCache.invalidate(keyPrefix + id);
     }
 
 
